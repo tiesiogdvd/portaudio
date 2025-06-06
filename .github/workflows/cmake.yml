@@ -48,9 +48,12 @@ jobs:
             asio_sdk_cache_path: "asiosdk.zip"
             cmake_options:
               -DPA_USE_ASIO=ON
-              -DPA_USE_JACK=OFF
               -DASIO_SDK_ZIP_PATH="asiosdk.zip"
               -DPA_BUILD_SHARED_LIBS=OFF
+              -DCMAKE_C_FLAGS="-D__USE_MINGW_ANSI_STDIO=1 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -static-libgcc -fno-asynchronous-unwind-tables"
+              -DCMAKE_CXX_FLAGS="-D__USE_MINGW_ANSI_STDIO=1 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -static-libgcc -static-libstdc++ -fno-asynchronous-unwind-tables"
+              -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -static"
+              -DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++"
           - name: macOS x86_64
             artifact_name: macos-x86_64
             os: macOS-latest
