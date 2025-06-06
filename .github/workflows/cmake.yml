@@ -9,6 +9,7 @@ jobs:
       matrix:
         include:
           - name: Ubuntu GCC
+            artifact_name: ubuntu-gcc
             os: ubuntu-latest
             vcpkg_triplet: x64-linux
             cmake_generator: "Unix Makefiles"
@@ -16,6 +17,7 @@ jobs:
               -DPA_USE_OSS=ON
               -DPA_BUILD_SHARED_LIBS=OFF
           - name: Ubuntu MinGW
+            artifact_name: ubuntu-mingw
             os: ubuntu-latest
             asio_sdk_cache_path: asiosdk.zip
             dependencies_extras: mingw-w64
@@ -27,6 +29,7 @@ jobs:
               -DASIO_SDK_ZIP_PATH=asiosdk.zip
               -DPA_BUILD_SHARED_LIBS=OFF
           - name: Windows MSVC
+            artifact_name: windows-msvc
             os: windows-latest
             vcpkg_triplet: x64-windows-static
             cmake_generator: "Visual Studio 17 2022"
@@ -37,6 +40,7 @@ jobs:
               -DPA_BUILD_SHARED_LIBS=OFF
               -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           - name: Windows MinGW
+            artifact_name: windows-mingw
             os: windows-latest
             vcpkg_triplet: x64-mingw-static
             cmake_generator: "MinGW Makefiles"
@@ -46,6 +50,7 @@ jobs:
               -DASIO_SDK_ZIP_PATH="asiosdk.zip"
               -DPA_BUILD_SHARED_LIBS=OFF
           - name: macOS x86_64
+            artifact_name: macos-x86_64
             os: macOS-latest
             vcpkg_triplet: x64-osx
             cmake_generator: "Unix Makefiles"
@@ -54,6 +59,7 @@ jobs:
               -DCMAKE_OSX_ARCHITECTURES=x86_64
               -DPA_BUILD_SHARED_LIBS=OFF
           - name: macOS arm64
+            artifact_name: macos-arm64
             os: macOS-latest
             vcpkg_triplet: arm64-osx
             cmake_generator: "Unix Makefiles"
@@ -118,22 +124,36 @@ jobs:
     - name: Package artifacts
       shell: bash
       run: |
-        cd ${{ github.workspace }}/../out
+        cd "${{ github.workspace }}/../out"
         # Create a clean package structure
-        mkdir -p portaudio-static
-        cp -r include portaudio-static/
-        cp -r lib portaudio-static/
-        # Add any additional files
-        if [ -d share ]; then
-          cp -r share portaudio-static/
+        mkdir -p "portaudio-${{ matrix.artifact_name }}"
+        
+        # Copy files if they exist
+        if [ -d "include" ]; then
+          cp -r include "portaudio-${{ matrix.artifact_name }}/"
         fi
-        tar -czf portaudio-${{ matrix.name }}.tar.gz portaudio-static
+        if [ -d "lib" ]; then
+          cp -r lib "portaudio-${{ matrix.artifact_name }}/"
+        fi
+        if [ -d "share" ]; then
+          cp -r share "portaudio-${{ matrix.artifact_name }}/"
+        fi
+        
+        # List contents for debugging
+        echo "Contents of portaudio-${{ matrix.artifact_name }}:"
+        ls -la "portaudio-${{ matrix.artifact_name }}/"
+        
+        # Create archive
+        tar -czf "portaudio-${{ matrix.artifact_name }}.tar.gz" "portaudio-${{ matrix.artifact_name }}"
+        
+        # Verify archive was created
+        ls -la "portaudio-${{ matrix.artifact_name }}.tar.gz"
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: portaudio-${{ matrix.name }}
-        path: ${{ github.workspace }}/../out/portaudio-${{ matrix.name }}.tar.gz
+        name: portaudio-${{ matrix.artifact_name }}
+        path: ${{ github.workspace }}/../out/portaudio-${{ matrix.artifact_name }}.tar.gz
         retention-days: 30
 
   create-release:
@@ -147,6 +167,11 @@ jobs:
       with:
         path: artifacts/
         
+    - name: List downloaded artifacts
+      run: |
+        echo "Downloaded artifacts:"
+        find artifacts/ -type f -name "*.tar.gz" | sort
+        
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -156,19 +181,18 @@ jobs:
           Static libraries for PortAudio built from latest source.
           
           **Included builds:**
-          - Ubuntu GCC (x64)
-          - Ubuntu MinGW (x64, cross-compiled Windows)
-          - Windows MSVC (x64, .lib files)
-          - Windows MinGW (x64, .a files)
-          - macOS x86_64
-          - macOS arm64
+          - Ubuntu GCC (x64) - `.a` files
+          - Ubuntu MinGW (x64, cross-compiled Windows) - `.a` files  
+          - Windows MSVC (x64) - `.lib` files
+          - Windows MinGW (x64) - `.a` files
+          - macOS x86_64 - `.a` files
+          - macOS arm64 - `.a` files
           
           **Features:**
           - Static libraries only
           - Release configuration
           - ASIO support (Windows)
           - All platform audio backends enabled
-          - vcpkg dependency management
         files: artifacts/*/*.tar.gz
         draft: false
         prerelease: false
