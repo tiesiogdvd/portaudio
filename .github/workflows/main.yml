@@ -1,0 +1,259 @@
+name: Build PortAudio Static Libraries
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, x86]
+        
+    steps:
+    - name: Checkout PortAudio
+      uses: actions/checkout@v4
+      with:
+        repository: PortAudio/portaudio
+        ref: master
+        
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+      
+    - name: Create build directory
+      run: mkdir build
+      
+    - name: Configure CMake
+      working-directory: build
+      run: |
+        if ("${{ matrix.arch }}" -eq "x64") {
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DPA_BUILD_SHARED_LIBS=OFF `
+            -DPA_BUILD_TESTS=OFF `
+            -DPA_BUILD_EXAMPLES=OFF `
+            -DPA_USE_ASIO=ON `
+            -DPA_USE_DS=ON `
+            -DPA_USE_WMME=ON `
+            -DPA_USE_WASAPI=ON `
+            -DPA_USE_WDMKS=ON `
+            -DCMAKE_INSTALL_PREFIX=install
+        } else {
+          cmake .. -G "Visual Studio 17 2022" -A Win32 `
+            -DPA_BUILD_SHARED_LIBS=OFF `
+            -DPA_BUILD_TESTS=OFF `
+            -DPA_BUILD_EXAMPLES=OFF `
+            -DPA_USE_ASIO=ON `
+            -DPA_USE_DS=ON `
+            -DPA_USE_WMME=ON `
+            -DPA_USE_WASAPI=ON `
+            -DPA_USE_WDMKS=ON `
+            -DCMAKE_INSTALL_PREFIX=install
+        }
+        
+    - name: Build
+      working-directory: build
+      run: |
+        cmake --build . --config Release --target portaudio
+        cmake --build . --config Release --target INSTALL
+        
+    - name: Package artifacts
+      working-directory: build
+      run: |
+        mkdir ../portaudio-windows-${{ matrix.arch }}
+        Copy-Item "install/include/*" "../portaudio-windows-${{ matrix.arch }}/" -Recurse
+        Copy-Item "install/lib/*" "../portaudio-windows-${{ matrix.arch }}/" -Recurse
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: portaudio-windows-${{ matrix.arch }}
+        path: portaudio-windows-${{ matrix.arch }}/
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+        
+    steps:
+    - name: Checkout PortAudio
+      uses: actions/checkout@v4
+      with:
+        repository: PortAudio/portaudio
+        ref: master
+        
+    - name: Install dependencies
+      run: |
+        brew install cmake
+        
+    - name: Create build directory
+      run: mkdir build
+      
+    - name: Configure CMake
+      working-directory: build
+      run: |
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPA_BUILD_SHARED_LIBS=OFF \
+          -DPA_BUILD_TESTS=OFF \
+          -DPA_BUILD_EXAMPLES=OFF \
+          -DPA_USE_COREAUDIO=ON \
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+          -DCMAKE_INSTALL_PREFIX=install
+          
+    - name: Build
+      working-directory: build
+      run: |
+        make -j$(sysctl -n hw.ncpu)
+        make install
+        
+    - name: Package artifacts
+      working-directory: build
+      run: |
+        mkdir ../portaudio-macos-${{ matrix.arch }}
+        cp -r install/include ../portaudio-macos-${{ matrix.arch }}/
+        cp -r install/lib ../portaudio-macos-${{ matrix.arch }}/
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: portaudio-macos-${{ matrix.arch }}
+        path: portaudio-macos-${{ matrix.arch }}/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+        
+    steps:
+    - name: Checkout PortAudio
+      uses: actions/checkout@v4
+      with:
+        repository: PortAudio/portaudio
+        ref: master
+        
+    - name: Install dependencies (x86_64)
+      if: matrix.arch == 'x86_64'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libasound2-dev \
+          libjack-jackd2-dev \
+          portaudio19-dev
+          
+    - name: Install dependencies (aarch64)
+      if: matrix.arch == 'aarch64'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          gcc-aarch64-linux-gnu \
+          g++-aarch64-linux-gnu
+        # Cross-compile dependencies
+        sudo dpkg --add-architecture arm64
+        sudo apt-get update
+        sudo apt-get install -y \
+          libasound2-dev:arm64 \
+          libjack-jackd2-dev:arm64
+          
+    - name: Create build directory
+      run: mkdir build
+      
+    - name: Configure CMake (x86_64)
+      if: matrix.arch == 'x86_64'
+      working-directory: build
+      run: |
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPA_BUILD_SHARED_LIBS=OFF \
+          -DPA_BUILD_TESTS=OFF \
+          -DPA_BUILD_EXAMPLES=OFF \
+          -DPA_USE_ALSA=ON \
+          -DPA_USE_JACK=ON \
+          -DCMAKE_INSTALL_PREFIX=install
+          
+    - name: Configure CMake (aarch64)
+      if: matrix.arch == 'aarch64'
+      working-directory: build
+      run: |
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPA_BUILD_SHARED_LIBS=OFF \
+          -DPA_BUILD_TESTS=OFF \
+          -DPA_BUILD_EXAMPLES=OFF \
+          -DPA_USE_ALSA=ON \
+          -DPA_USE_JACK=ON \
+          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+          -DCMAKE_SYSTEM_NAME=Linux \
+          -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+          -DCMAKE_INSTALL_PREFIX=install
+          
+    - name: Build
+      working-directory: build
+      run: |
+        make -j$(nproc)
+        make install
+        
+    - name: Package artifacts
+      working-directory: build
+      run: |
+        mkdir ../portaudio-linux-${{ matrix.arch }}
+        cp -r install/include ../portaudio-linux-${{ matrix.arch }}/
+        cp -r install/lib ../portaudio-linux-${{ matrix.arch }}/
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: portaudio-linux-${{ matrix.arch }}
+        path: portaudio-linux-${{ matrix.arch }}/
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+        
+    - name: Create release archives
+      run: |
+        cd artifacts
+        for dir in */; do
+          tar -czf "${dir%/}.tar.gz" "$dir"
+        done
+        ls -la *.tar.gz
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: portaudio-static-${{ github.run_number }}
+        name: PortAudio Static Libraries Build ${{ github.run_number }}
+        body: |
+          Static libraries for PortAudio built from latest master.
+          
+          **Included platforms:**
+          - Windows (x86, x64)
+          - macOS (x86_64, arm64)  
+          - Linux (x86_64, aarch64)
+          
+          **Build configuration:**
+          - Static libraries only
+          - Release configuration
+          - Platform-optimized audio backends enabled
+        files: artifacts/*.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
