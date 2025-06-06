@@ -46,11 +46,11 @@ jobs:
             vcpkg_triplet: x64-mingw-static
             cmake_generator: "MinGW Makefiles"
             cmake_options:
+              -DPA_USE_WASAPI=ON
               -DPA_USE_ASIO=OFF
               -DPA_USE_JACK=OFF
-              -DPA_USE_WMME=ON
-              -DPA_USE_DS=ON
-              -DPA_USE_WASAPI=ON
+              -DPA_USE_WMME=OFF
+              -DPA_USE_DS=OFF
               -DPA_USE_WDMKS=OFF
               -DPA_BUILD_SHARED_LIBS=OFF
               -DCMAKE_C_FLAGS="-D__USE_MINGW_ANSI_STDIO=1 -static-libgcc"
