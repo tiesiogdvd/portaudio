@@ -72,7 +72,6 @@ jobs:
     name: ${{ matrix.name }}
     env:
       cmake_build_type: Release
-      INSTALL_DIR: ${{ github.workspace }}/install
       
     steps:
     - name: Checkout PortAudio Git repository
@@ -84,18 +83,6 @@ jobs:
         sudo apt-get install libasound2-dev libpulse-dev libsndio-dev ${{ matrix.dependencies_extras }}
       if: matrix.os == 'ubuntu-latest'
       
-    - name: "Setup MinGW [Windows MinGW]"
-      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: >-
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-cmake
-          mingw-w64-x86_64-ninja
-          make
-      
     - name: "Set up ASIO SDK cache [Windows/MinGW]"
       uses: actions/cache@v4
       if: matrix.asio_sdk_cache_path != null
@@ -105,7 +92,7 @@ jobs:
                
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v7
-      if: matrix.vcpkg_triplet != null
+      if: ${{ matrix.vcpkg_triplet }} != null
       with:
         vcpkgDirectory: ${{ github.workspace }}/../vcpkg
         vcpkgTriplet: ${{ matrix.vcpkg_triplet }}
@@ -114,116 +101,58 @@ jobs:
         vcpkgGitCommitId: ca9ac0ba65965937fb66783c4f726c2c755ad9d9
         setupOnly: true
         
-    - name: Configure PortAudio library (Windows MinGW)
-      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
-      shell: msys2 {0}
-      run: |
-        cmake \
-          -G "${{ matrix.cmake_generator }}" \
-          ${{ matrix.cmake_options }} \
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/../vcpkg/scripts/buildsystems/vcpkg.cmake \
-          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}" \
-          -DCMAKE_BUILD_TYPE=${{ env.cmake_build_type }} \
-          -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} \
-          -DPA_USE_SKELETON=OFF \
-          -DPA_BUILD_TESTS=OFF \
-          -DPA_BUILD_EXAMPLES=OFF \
-          -DPA_WARNINGS_ARE_ERRORS=OFF \
-          -S . \
-          -B ${{ github.workspace }}/build
-        
-    - name: Configure PortAudio library (Other platforms)
-      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
-      shell: bash
-      run: |
-        cmake \
-          -G "${{ matrix.cmake_generator }}" \
-          ${{ matrix.cmake_options }} \
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/../vcpkg/scripts/buildsystems/vcpkg.cmake \
-          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}" \
-          -DCMAKE_BUILD_TYPE=${{ env.cmake_build_type }} \
-          -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} \
-          -DPA_USE_SKELETON=OFF \
-          -DPA_BUILD_TESTS=OFF \
-          -DPA_BUILD_EXAMPLES=OFF \
-          -DPA_WARNINGS_ARE_ERRORS=OFF \
-          -S . \
-          -B ${{ github.workspace }}/build
+    - name: Configure PortAudio library
+      run: cmake
+           -G "${{ matrix.cmake_generator }}"
+           ${{ matrix.cmake_options }}
+           -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/../vcpkg/scripts/buildsystems/vcpkg.cmake
+           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/../out
+           -DCMAKE_BUILD_TYPE=${{ env.cmake_build_type }}
+           -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }}
+           -DPA_USE_SKELETON=OFF
+           -DPA_BUILD_TESTS=OFF
+           -DPA_BUILD_EXAMPLES=OFF
+           -DPA_WARNINGS_ARE_ERRORS=OFF
+           -S .
+           -B ${{ github.workspace }}/build
            
-    - name: Build PortAudio library (Windows MinGW)
-      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
-      shell: msys2 {0}
+    - name: Build PortAudio library
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.cmake_build_type }} --parallel 4
       
-    - name: Build PortAudio library (Other platforms)
-      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
-      run: cmake --build ${{ github.workspace }}/build --config ${{ env.cmake_build_type }} --parallel 4
-      
-    - name: Install PortAudio library (Windows MinGW)
-      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
-      shell: msys2 {0}
+    - name: Install PortAudio library
       run: cmake --install ${{ github.workspace }}/build --config ${{ env.cmake_build_type }}
-      
-    - name: Install PortAudio library (Other platforms)
-      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
-      run: cmake --install ${{ github.workspace }}/build --config ${{ env.cmake_build_type }}
-
-    - name: Debug - List install directory
-      shell: bash
-      run: |
-        echo "Install directory contents:"
-        ls -la "${{ env.INSTALL_DIR }}"
-        if [ -d "${{ env.INSTALL_DIR }}/include" ]; then
-          echo "Include directory:"
-          ls -la "${{ env.INSTALL_DIR }}/include"
-        fi
-        if [ -d "${{ env.INSTALL_DIR }}/lib" ]; then
-          echo "Lib directory:"
-          ls -la "${{ env.INSTALL_DIR }}/lib"
-        fi
 
     - name: Package artifacts
       shell: bash
       run: |
-        # Create package directory in workspace
-        mkdir -p "${{ github.workspace }}/packages"
-        cd "${{ github.workspace }}/packages"
+        # Work in the install directory and package into workspace
+        cd "${{ github.workspace }}/../out"
         
         # Create the package structure
         mkdir -p "portaudio-${{ matrix.artifact_name }}"
         
-        # Copy files from install directory
-        if [ -d "${{ env.INSTALL_DIR }}/include" ]; then
-          cp -r "${{ env.INSTALL_DIR }}/include" "portaudio-${{ matrix.artifact_name }}/"
-          echo "Copied include directory"
+        # Copy files
+        if [ -d "include" ]; then
+          cp -r include "portaudio-${{ matrix.artifact_name }}/"
         fi
-        
-        if [ -d "${{ env.INSTALL_DIR }}/lib" ]; then
-          cp -r "${{ env.INSTALL_DIR }}/lib" "portaudio-${{ matrix.artifact_name }}/"
-          echo "Copied lib directory"
+        if [ -d "lib" ]; then
+          cp -r lib "portaudio-${{ matrix.artifact_name }}/"
         fi
-        
-        if [ -d "${{ env.INSTALL_DIR }}/share" ]; then
-          cp -r "${{ env.INSTALL_DIR }}/share" "portaudio-${{ matrix.artifact_name }}/"
-          echo "Copied share directory"
+        if [ -d "share" ]; then
+          cp -r share "portaudio-${{ matrix.artifact_name }}/"
         fi
-        
-        # Show what we're packaging
-        echo "Package contents:"
-        ls -la "portaudio-${{ matrix.artifact_name }}"
         
         # Create archive
         tar -czf "portaudio-${{ matrix.artifact_name }}.tar.gz" "portaudio-${{ matrix.artifact_name }}"
         
-        # Verify archive was created
-        echo "Archive created:"
-        ls -la "portaudio-${{ matrix.artifact_name }}.tar.gz"
+        # Move to workspace to avoid relative path issues
+        mv "portaudio-${{ matrix.artifact_name }}.tar.gz" "${{ github.workspace }}/"
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: portaudio-${{ matrix.artifact_name }}
-        path: ${{ github.workspace }}/packages/portaudio-${{ matrix.artifact_name }}.tar.gz
+        path: ${{ github.workspace }}/portaudio-${{ matrix.artifact_name }}.tar.gz
         retention-days: 30
 
   create-release:
@@ -236,11 +165,6 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts/
-        
-    - name: List downloaded artifacts
-      run: |
-        echo "Downloaded artifacts:"
-        find artifacts/ -type f -name "*.tar.gz" | sort
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -257,18 +181,6 @@ jobs:
           - **windows-mingw**: Windows with MinGW (`.a` files)
           - **macos-x86_64**: macOS Intel (`.a` files)
           - **macos-arm64**: macOS Apple Silicon (`.a` files)
-          
-          **Features:**
-          - Static libraries only (no DLLs/shared libraries)
-          - Release configuration optimized
-          - ASIO support enabled (Windows builds)
-          - All platform-specific audio backends included
-          - Static runtime linking (no redistributables needed)
-          
-          **Usage:**
-          Extract the appropriate archive for your platform and link against the static library:
-          - Include: `portaudio-{platform}/include/portaudio.h`
-          - Library: `portaudio-{platform}/lib/libportaudio.a` or `.lib`
         files: artifacts/*/*.tar.gz
         draft: false
         prerelease: false
