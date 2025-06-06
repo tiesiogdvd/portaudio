@@ -36,6 +36,7 @@ jobs:
             asio_sdk_cache_path: "asiosdk.zip"
             cmake_options:
               -DPA_USE_ASIO=ON
+              -DPA_USE_JACK=OFF
               -DASIO_SDK_ZIP_PATH="asiosdk.zip"
               -DPA_BUILD_SHARED_LIBS=OFF
               -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
@@ -47,6 +48,7 @@ jobs:
             asio_sdk_cache_path: "asiosdk.zip"
             cmake_options:
               -DPA_USE_ASIO=ON
+              -DPA_USE_JACK=OFF
               -DASIO_SDK_ZIP_PATH="asiosdk.zip"
               -DPA_BUILD_SHARED_LIBS=OFF
           - name: macOS x86_64
