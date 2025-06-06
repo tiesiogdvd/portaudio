@@ -1,4 +1,4 @@
-name: Build PortAudio Static Libraries
+name: Build PortAudio Static Libraries (MinGW)
 
 on:
   push:
@@ -8,11 +8,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build-windows-mingw:
     runs-on: windows-latest
     strategy:
       matrix:
-        arch: [x64, x86]
+        arch: [x86_64, i686]
         
     steps:
     - name: Checkout PortAudio
@@ -21,57 +21,60 @@ jobs:
         repository: PortAudio/portaudio
         ref: master
         
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
-      
+    - name: Setup MinGW-w64
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-${{ matrix.arch }}-gcc
+          mingw-w64-${{ matrix.arch }}-cmake
+          mingw-w64-${{ matrix.arch }}-ninja
+          mingw-w64-${{ matrix.arch }}-pkg-config
+          make
+          
     - name: Create build directory
+      shell: msys2 {0}
       run: mkdir build
       
     - name: Configure CMake
+      shell: msys2 {0}
       working-directory: build
       run: |
-        if ("${{ matrix.arch }}" -eq "x64") {
-          cmake .. -G "Visual Studio 17 2022" -A x64 `
-            -DPA_BUILD_SHARED_LIBS=OFF `
-            -DPA_BUILD_TESTS=OFF `
-            -DPA_BUILD_EXAMPLES=OFF `
-            -DPA_USE_ASIO=ON `
-            -DPA_USE_DS=ON `
-            -DPA_USE_WMME=ON `
-            -DPA_USE_WASAPI=ON `
-            -DPA_USE_WDMKS=ON `
-            -DCMAKE_INSTALL_PREFIX=install
-        } else {
-          cmake .. -G "Visual Studio 17 2022" -A Win32 `
-            -DPA_BUILD_SHARED_LIBS=OFF `
-            -DPA_BUILD_TESTS=OFF `
-            -DPA_BUILD_EXAMPLES=OFF `
-            -DPA_USE_ASIO=ON `
-            -DPA_USE_DS=ON `
-            -DPA_USE_WMME=ON `
-            -DPA_USE_WASAPI=ON `
-            -DPA_USE_WDMKS=ON `
-            -DCMAKE_INSTALL_PREFIX=install
-        }
+        cmake .. \
+          -G "MinGW Makefiles" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPA_BUILD_SHARED_LIBS=OFF \
+          -DPA_BUILD_TESTS=OFF \
+          -DPA_BUILD_EXAMPLES=OFF \
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded \
+          -DPA_USE_ASIO=ON \
+          -DPA_USE_DS=ON \
+          -DPA_USE_WMME=ON \
+          -DPA_USE_WASAPI=ON \
+          -DPA_USE_WDMKS=ON \
+          -DCMAKE_INSTALL_PREFIX=install
         
     - name: Build
+      shell: msys2 {0}
       working-directory: build
       run: |
-        cmake --build . --config Release --target portaudio
-        cmake --build . --config Release --target INSTALL
+        make -j$(nproc)
+        make install
         
     - name: Package artifacts
+      shell: msys2 {0}
       working-directory: build
       run: |
-        mkdir ../portaudio-windows-${{ matrix.arch }}
-        Copy-Item "install/include/*" "../portaudio-windows-${{ matrix.arch }}/" -Recurse
-        Copy-Item "install/lib/*" "../portaudio-windows-${{ matrix.arch }}/" -Recurse
+        mkdir ../portaudio-windows-mingw-${{ matrix.arch }}
+        cp -r install/include ../portaudio-windows-mingw-${{ matrix.arch }}/
+        cp -r install/lib ../portaudio-windows-mingw-${{ matrix.arch }}/
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: portaudio-windows-${{ matrix.arch }}
-        path: portaudio-windows-${{ matrix.arch }}/
+        name: portaudio-windows-mingw-${{ matrix.arch }}
+        path: portaudio-windows-mingw-${{ matrix.arch }}/
 
   build-macos:
     runs-on: macos-latest
@@ -217,7 +220,7 @@ jobs:
         path: portaudio-linux-${{ matrix.arch }}/
 
   create-release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows-mingw, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     
@@ -238,13 +241,13 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: portaudio-static-${{ github.run_number }}
-        name: PortAudio Static Libraries Build ${{ github.run_number }}
+        tag_name: portaudio-static-mingw-${{ github.run_number }}
+        name: PortAudio Static Libraries (MinGW) Build ${{ github.run_number }}
         body: |
-          Static libraries for PortAudio built from latest master.
+          Static libraries for PortAudio built with MinGW from latest master.
           
           **Included platforms:**
-          - Windows (x86, x64)
+          - Windows MinGW (x86_64, i686) - produces .a files
           - macOS (x86_64, arm64)  
           - Linux (x86_64, aarch64)
           
@@ -252,6 +255,7 @@ jobs:
           - Static libraries only
           - Release configuration
           - Platform-optimized audio backends enabled
+          - Windows builds use MinGW-w64 toolchain
         files: artifacts/*.tar.gz
         draft: false
         prerelease: false
