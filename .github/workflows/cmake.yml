@@ -84,6 +84,18 @@ jobs:
         sudo apt-get install libasound2-dev libpulse-dev libsndio-dev ${{ matrix.dependencies_extras }}
       if: matrix.os == 'ubuntu-latest'
       
+    - name: "Setup MinGW [Windows MinGW]"
+      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
+          make
+      
     - name: "Set up ASIO SDK cache [Windows/MinGW]"
       uses: actions/cache@v4
       if: matrix.asio_sdk_cache_path != null
@@ -95,19 +107,21 @@ jobs:
       uses: lukka/run-vcpkg@v7
       if: matrix.vcpkg_triplet != null
       with:
-        vcpkgDirectory: ${{ github.workspace }}/vcpkg
+        vcpkgDirectory: ${{ github.workspace }}/../vcpkg
         vcpkgTriplet: ${{ matrix.vcpkg_triplet }}
         appendedCacheKey: ${{ hashFiles( '**/vcpkg.json' ) }}
         additionalCachedPaths: build/vcpkg_installed
         vcpkgGitCommitId: ca9ac0ba65965937fb66783c4f726c2c755ad9d9
         setupOnly: true
         
-    - name: Configure PortAudio library
+    - name: Configure PortAudio library (Windows MinGW)
+      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
+      shell: msys2 {0}
       run: |
         cmake \
           -G "${{ matrix.cmake_generator }}" \
           ${{ matrix.cmake_options }} \
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/../vcpkg/scripts/buildsystems/vcpkg.cmake \
           -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}" \
           -DCMAKE_BUILD_TYPE=${{ env.cmake_build_type }} \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} \
@@ -117,12 +131,41 @@ jobs:
           -DPA_WARNINGS_ARE_ERRORS=OFF \
           -S . \
           -B ${{ github.workspace }}/build
+        
+    - name: Configure PortAudio library (Other platforms)
+      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
       shell: bash
+      run: |
+        cmake \
+          -G "${{ matrix.cmake_generator }}" \
+          ${{ matrix.cmake_options }} \
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/../vcpkg/scripts/buildsystems/vcpkg.cmake \
+          -DCMAKE_INSTALL_PREFIX="${{ env.INSTALL_DIR }}" \
+          -DCMAKE_BUILD_TYPE=${{ env.cmake_build_type }} \
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} \
+          -DPA_USE_SKELETON=OFF \
+          -DPA_BUILD_TESTS=OFF \
+          -DPA_BUILD_EXAMPLES=OFF \
+          -DPA_WARNINGS_ARE_ERRORS=OFF \
+          -S . \
+          -B ${{ github.workspace }}/build
            
-    - name: Build PortAudio library
+    - name: Build PortAudio library (Windows MinGW)
+      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
+      shell: msys2 {0}
       run: cmake --build ${{ github.workspace }}/build --config ${{ env.cmake_build_type }} --parallel 4
       
-    - name: Install PortAudio library
+    - name: Build PortAudio library (Other platforms)
+      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
+      run: cmake --build ${{ github.workspace }}/build --config ${{ env.cmake_build_type }} --parallel 4
+      
+    - name: Install PortAudio library (Windows MinGW)
+      if: matrix.os == 'windows-latest' && matrix.artifact_name == 'windows-mingw'
+      shell: msys2 {0}
+      run: cmake --install ${{ github.workspace }}/build --config ${{ env.cmake_build_type }}
+      
+    - name: Install PortAudio library (Other platforms)
+      if: matrix.os != 'windows-latest' || matrix.artifact_name != 'windows-mingw'
       run: cmake --install ${{ github.workspace }}/build --config ${{ env.cmake_build_type }}
 
     - name: Debug - List install directory
